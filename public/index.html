@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TastyBot — AI Voice Waiter</title>
+
+<!-- Silero VAD from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.19/dist/bundle.min.js"></script>
+
+<style>
+  /* ── Reset & base ───────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0d0d;
+    --surface: #161616;
+    --card: #1e1e1e;
+    --border: #2a2a2a;
+    --accent: #ff6b35;
+    --accent2: #f7c59f;
+    --text: #e8e8e8;
+    --muted: #888;
+    --green: #4caf50;
+    --red: #f44336;
+    --blue: #2196f3;
+    --yellow: #ffc107;
+    --radius: 16px;
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────── */
+  header {
+    width: 100%;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo { font-size: 26px; }
+  .brand h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .brand p { font-size: 12px; color: var(--muted); }
+
+  /* ── Layout ─────────────────────────────────────────────────────── */
+  .main {
+    width: 100%;
+    max-width: 900px;
+    padding: 24px 16px;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 20px;
+  }
+  @media (max-width: 700px) {
+    .main { grid-template-columns: 1fr; }
+  }
+
+  /* ── Card ───────────────────────────────────────────────────────── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .card h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  /* ── Orb (voice status) ──────────────────────────────────────────── */
+  .orb-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    padding: 30px 0;
+  }
+  .orb-wrap {
+    position: relative;
+    width: 130px;
+    height: 130px;
+  }
+  .orb {
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ff8c5a, #c94a1a);
+    box-shadow: 0 0 40px rgba(255,107,53,0.3);
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    user-select: none;
+  }
+  .orb:hover { transform: scale(1.05); }
+
+  /* Pulse rings — only show when active */
+  .ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid rgba(255,107,53,0.4);
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .ring1 { width: 150px; height: 150px; }
+  .ring2 { width: 175px; height: 175px; }
+  .ring3 { width: 200px; height: 200px; }
+
+  .orb-wrap.listening .ring { animation: pulse 2s ease-out infinite; }
+  .orb-wrap.listening .ring1 { animation-delay: 0s; }
+  .orb-wrap.listening .ring2 { animation-delay: 0.4s; }
+  .orb-wrap.listening .ring3 { animation-delay: 0.8s; }
+
+  .orb-wrap.speaking .orb {
+    background: radial-gradient(circle at 35% 35%, #42a5f5, #1565c0);
+    box-shadow: 0 0 40px rgba(33,150,243,0.4);
+    animation: speakPulse 0.8s ease-in-out infinite alternate;
+  }
+  .orb-wrap.speaking .ring { border-color: rgba(33,150,243,0.3); animation: pulse 1.2s ease-out infinite; }
+
+  .orb-wrap.processing .orb {
+    background: radial-gradient(circle at 35% 35%, #ffca28, #f57f17);
+    box-shadow: 0 0 40px rgba(255,193,7,0.4);
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes pulse {
+    0%   { transform: translate(-50%,-50%) scale(0.9); opacity: 0.8; }
+    100% { transform: translate(-50%,-50%) scale(1.6); opacity: 0; }
+  }
+  @keyframes speakPulse {
+    from { transform: scale(1); }
+    to   { transform: scale(1.06); }
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+
+  /* ── Status pill ─────────────────────────────────────────────────── */
+  .status-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    padding: 8px 18px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+  .status-dot.idle    { background: var(--muted); }
+  .status-dot.listen  { background: var(--green); animation: blink 1s ease-in-out infinite; }
+  .status-dot.think   { background: var(--yellow); animation: blink 0.5s ease-in-out infinite; }
+  .status-dot.speak   { background: var(--blue); }
+  .status-dot.error   { background: var(--red); }
+
+  @keyframes blink {
+    0%,100% { opacity: 1; }
+    50%      { opacity: 0.3; }
+  }
+
+  /* ── Waveform ───────────────────────────────────────────────────── */
+  canvas#waveform {
+    width: 100%;
+    height: 60px;
+    border-radius: 8px;
+    background: var(--surface);
+  }
+
+  /* ── Transcript ──────────────────────────────────────────────────── */
+  .transcript-box {
+    height: 380px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-right: 4px;
+  }
+  .transcript-box::-webkit-scrollbar { width: 4px; }
+  .transcript-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .msg {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    animation: fadeUp 0.3s ease;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .msg .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    padding-left: 12px;
+  }
+  .msg .bubble {
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    line-height: 1.5;
+    max-width: 90%;
+  }
+  .msg.user .bubble {
+    background: rgba(255,107,53,0.15);
+    border: 1px solid rgba(255,107,53,0.25);
+    align-self: flex-end;
+  }
+  .msg.user .label { align-self: flex-end; }
+  .msg.bot .bubble {
+    background: rgba(33,150,243,0.12);
+    border: 1px solid rgba(33,150,243,0.2);
+    align-self: flex-start;
+  }
+  .msg.system .bubble {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    align-self: center;
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .msg.system .label { align-self: center; display: none; }
+
+  /* Streaming indicator */
+  .typing-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--blue);
+    border-radius: 50%;
+    margin-left: 4px;
+    animation: blink 0.8s ease-in-out infinite;
+  }
+
+  /* ── Start button ────────────────────────────────────────────────── */
+  #startBtn {
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    border: none;
+    background: linear-gradient(135deg, var(--accent), #c94a1a);
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    margin-bottom: 10px;
+  }
+  #startBtn:hover { opacity: 0.9; }
+  #startBtn:active { transform: scale(0.98); }
+  #startBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Sidebar ─────────────────────────────────────────────────────── */
+  .sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+  .menu-preview {
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--muted);
+  }
+  .menu-preview strong { color: var(--accent2); display: block; margin-top: 8px; }
+  .menu-preview span { color: var(--text); }
+
+  .tip-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .tip-list li {
+    font-size: 12px;
+    color: var(--muted);
+    padding: 8px 12px;
+    background: var(--surface);
+    border-radius: 8px;
+    border-left: 3px solid var(--accent);
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .tip-list li:hover { background: var(--border); }
+
+  /* ── Barge-in indicator ──────────────────────────────────────────── */
+  #bargeIndicator {
+    display: none;
+    position: fixed;
+    top: 20px; right: 20px;
+    background: var(--red);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    z-index: 999;
+    animation: fadeUp 0.2s ease;
+  }
+
+  /* ── VAD confidence bar ──────────────────────────────────────────── */
+  .vad-bar-wrap { 
+    height: 4px; 
+    background: var(--border); 
+    border-radius: 2px; 
+    overflow: hidden; 
+    margin-top: 8px;
+  }
+  #vadBar {
+    height: 100%;
+    width: 0%;
+    background: var(--green);
+    transition: width 0.1s;
+    border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Barge-in flash indicator -->
+<div id="bargeIndicator">🛑 Barge-in! Stopping...</div>
+
+<header>
+  <div class="logo">🍽️</div>
+  <div class="brand">
+    <h1>TastyBot</h1>
+    <p>AI Voice Waiter · The Pixel Café</p>
+  </div>
+</header>
+
+<div class="main">
+  <!-- Left: Voice Interface -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+
+    <div class="card">
+      <div class="orb-container">
+        <div class="orb-wrap" id="orbWrap">
+          <div class="ring ring1"></div>
+          <div class="ring ring2"></div>
+          <div class="ring ring3"></div>
+          <div class="orb" id="orb">🎙️</div>
+        </div>
+        <div class="status-pill">
+          <div class="status-dot idle" id="statusDot"></div>
+          <span id="statusText">Click Start to begin</span>
+        </div>
+        <div class="vad-bar-wrap" style="width:200px;">
+          <div id="vadBar"></div>
+        </div>
+      </div>
+
+      <button id="startBtn">🎙️ Start Conversation</button>
+      <canvas id="waveform" height="60"></canvas>
+    </div>
+
+    <div class="card" style="flex:1;">
+      <h2>Conversation</h2>
+      <div class="transcript-box" id="transcriptBox">
+        <div class="msg system">
+          <div class="bubble">👋 Hi! I'm TastyBot, your voice waiter. Hit Start and ask me anything about the menu — or just place your order!</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Sidebar -->
+  <div class="sidebar">
+    <div class="card">
+      <h2>Menu Highlights</h2>
+      <div class="menu-preview">
+        <strong>☕ Drinks</strong>
+        <span>Espresso · Cappuccino · Latte · Cold Brew · Matcha</span>
+        <strong>🥐 Breakfast</strong>
+        <span>Avocado Toast · Açaí Bowl · Pancakes · Eggs</span>
+        <strong>🥪 Lunch</strong>
+        <span>Chicken Sandwich · Mushroom Panini · Caesar Salad</span>
+        <strong>🍰 Dessert</strong>
+        <span>Lava Cake · Cheesecake · Vegan Brownie</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Try Saying...</h2>
+      <ul class="tip-list" id="tipList">
+        <li>"What's on the menu?"</li>
+        <li>"Do you have vegan options?"</li>
+        <li>"I'd like a cappuccino and avocado toast."</li>
+        <li>"What's in the Caesar salad?"</li>
+        <li>"Can I get a chocolate lava cake?"</li>
+        <li>"What's your most popular drink?"</li>
+      </ul>
+    </div>
+
+    <div class="card" style="font-size:12px;color:var(--muted);line-height:1.7;">
+      <h2>How Barge-In Works</h2>
+      Start speaking while TastyBot is talking — it will <strong style="color:var(--accent)">stop immediately</strong>, cancel generation on the server, and listen to you.<br><br>
+      Powered by Silero VAD · Whisper STT · GPT-4o · OpenAI TTS
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// TastyBot — Voice Assistant with True Barge-In
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SESSION_ID = `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+const BACKEND = ''; // same origin
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const startBtn       = document.getElementById('startBtn');
+const orbWrap        = document.getElementById('orbWrap');
+const orb            = document.getElementById('orb');
+const statusDot      = document.getElementById('statusDot');
+const statusText     = document.getElementById('statusText');
+const transcriptBox  = document.getElementById('transcriptBox');
+const waveformCanvas = document.getElementById('waveform');
+const vadBar         = document.getElementById('vadBar');
+const bargeIndicator = document.getElementById('bargeIndicator');
+const tipList        = document.getElementById('tipList');
+
+const ctx = waveformCanvas.getContext('2d');
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let conversationHistory = [];
+let vadInstance         = null;
+let started             = false;
+let currentState        = 'idle'; // idle | listening | processing | speaking
+
+// Audio playback state
+let audioCtx            = null;
+let audioQueue          = [];       // Array of AudioBuffer
+let isPlayingAudio      = false;
+let currentSource       = null;     // Currently playing AudioBufferSourceNode
+let chatAbortController = null;     // AbortController for /chat SSE
+
+// Waveform animation
+let animFrameId         = null;
+let analyser            = null;
+let dataArray           = null;
+let micStream           = null;
+
+// ── State machine ─────────────────────────────────────────────────────────────
+function setState(newState) {
+  currentState = newState;
+  orbWrap.className = 'orb-wrap';
+  statusDot.className = 'status-dot';
+
+  switch (newState) {
+    case 'idle':
+      orb.textContent = '🎙️';
+      statusDot.classList.add('idle');
+      statusText.textContent = 'Idle — click Start';
+      break;
+    case 'listening':
+      orbWrap.classList.add('listening');
+      orb.textContent = '👂';
+      statusDot.classList.add('listen');
+      statusText.textContent = 'Listening...';
+      break;
+    case 'processing':
+      orbWrap.classList.add('processing');
+      orb.textContent = '⏳';
+      statusDot.classList.add('think');
+      statusText.textContent = 'Thinking...';
+      break;
+    case 'speaking':
+      orbWrap.classList.add('speaking');
+      orb.textContent = '🗣️';
+      statusDot.classList.add('speak');
+      statusText.textContent = 'Speaking — barge in anytime!';
+      break;
+    case 'error':
+      orb.textContent = '⚠️';
+      statusDot.classList.add('error');
+      statusText.textContent = 'Error — check console';
+      break;
+  }
+}
+
+// ── Audio context ─────────────────────────────────────────────────────────────
+function getAudioCtx() {
+  if (!audioCtx || audioCtx.state === 'closed') {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// ── Stop all audio immediately (barge-in) ─────────────────────────────────────
+function stopAudioNow() {
+  // Stop currently playing source
+  if (currentSource) {
+    try { currentSource.stop(); } catch (_) {}
+    currentSource = null;
+  }
+  // Drain queue
+  audioQueue = [];
+  isPlayingAudio = false;
+}
+
+// ── Play audio queue sequentially ─────────────────────────────────────────────
+async function playNextInQueue() {
+  if (isPlayingAudio || audioQueue.length === 0) return;
+
+  isPlayingAudio = true;
+  const ac = getAudioCtx();
+  const buffer = audioQueue.shift();
+
+  const source = ac.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ac.destination);
+  currentSource = source;
+
+  source.onended = () => {
+    currentSource = null;
+    isPlayingAudio = false;
+    if (audioQueue.length > 0) {
+      playNextInQueue();
+    } else {
+      // All audio done — go back to listening
+      if (currentState === 'speaking') {
+        setState('listening');
+      }
+    }
+  };
+
+  source.start();
+}
+
+// ── Decode base64 MP3 chunk and queue for playback ────────────────────────────
+let mp3Buffer = new Uint8Array(0); // accumulate until we have enough to decode
+
+async function handleAudioChunk(base64Chunk) {
+  const binary = atob(base64Chunk);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+  // Merge into buffer
+  const merged = new Uint8Array(mp3Buffer.length + bytes.length);
+  merged.set(mp3Buffer);
+  merged.set(bytes, mp3Buffer.length);
+  mp3Buffer = merged;
+
+  // Try to decode when we have enough data (>= 16KB or done signal)
+  if (mp3Buffer.length >= 16384) {
+    await flushMp3Buffer();
+  }
+}
+
+async function flushMp3Buffer(force = false) {
+  if (mp3Buffer.length === 0) return;
+  const ac = getAudioCtx();
+  try {
+    const decoded = await ac.decodeAudioData(mp3Buffer.buffer.slice(0));
+    audioQueue.push(decoded);
+    mp3Buffer = new Uint8Array(0);
+    playNextInQueue();
+  } catch (e) {
+    if (force) {
+      console.warn('[Audio] Could not decode final buffer:', e.message);
+      mp3Buffer = new Uint8Array(0);
+    }
+    // If not force, keep accumulating
+  }
+}
+
+// ── Barge-in: stop audio + cancel server generation ───────────────────────────
+async function bargeIn() {
+  console.log('[BARGE-IN] Triggered');
+
+  // Flash indicator
+  bargeIndicator.style.display = 'block';
+  setTimeout(() => { bargeIndicator.style.display = 'none'; }, 1500);
+
+  // 1. Stop browser audio immediately
+  stopAudioNow();
+  mp3Buffer = new Uint8Array(0);
+
+  // 2. Abort SSE connection to server
+  if (chatAbortController) {
+    chatAbortController.abort();
+    chatAbortController = null;
+  }
+
+  // 3. Tell server to cancel active LLM+TTS generation (fire-and-forget)
+  fetch(`${BACKEND}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId: SESSION_ID }),
+  }).catch(() => {});
+}
+
+// ── Send text to LLM and stream back ─────────────────────────────────────────
+async function chat(userText) {
+  setState('processing');
+
+  // Add user message to history and UI
+  conversationHistory.push({ role: 'user', content: userText });
+  addMessage('user', userText);
+
+  // Prepare bot message bubble (will be filled as tokens stream in)
+  const botBubble = addMessage('bot', '', true); // streaming=true
+  let fullResponse = '';
+
+  // Create abort controller for this SSE request
+  chatAbortController = new AbortController();
+  mp3Buffer = new Uint8Array(0);
+
+  try {
+    const response = await fetch(`${BACKEND}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: conversationHistory,
+        sessionId: SESSION_ID,
+      }),
+      signal: chatAbortController.signal,
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let firstAudioReceived = false;
+
+    setState('speaking');
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr) continue;
+
+        let evt;
+        try { evt = JSON.parse(jsonStr); } catch (_) { continue; }
+
+        if (evt.type === 'text') {
+          fullResponse += evt.delta;
+          // Update bubble with streaming text (strip typing indicator temporarily)
+          updateBubble(botBubble, fullResponse, true);
+
+        } else if (evt.type === 'audio') {
+          if (!firstAudioReceived) {
+            firstAudioReceived = true;
+            setState('speaking');
+          }
+          await handleAudioChunk(evt.chunk);
+
+        } else if (evt.type === 'done') {
+          // Flush any remaining MP3 data
+          await flushMp3Buffer(true);
+          updateBubble(botBubble, fullResponse, false); // remove typing dot
+          break;
+
+        } else if (evt.type === 'error') {
+          console.error('[SSE Error]', evt.message);
+          break;
+        }
+      }
+    }
+
+    // Save to history
+    if (fullResponse) {
+      conversationHistory.push({ role: 'assistant', content: fullResponse });
+    }
+
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      console.log('[Chat] Aborted (barge-in)');
+      // Partial response is fine — mark bubble as interrupted
+      if (fullResponse) {
+        updateBubble(botBubble, fullResponse + ' ✂️', false);
+        conversationHistory.push({ role: 'assistant', content: fullResponse });
+      } else {
+        botBubble.remove(); // nothing was said
+      }
+    } else {
+      console.error('[Chat Error]', err);
+      setState('error');
+      return;
+    }
+  }
+
+  chatAbortController = null;
+
+  // If audio is still playing, state will switch to listening via onended
+  // If no audio (e.g., barge-in happened), go back to listening
+  if (!isPlayingAudio && audioQueue.length === 0) {
+    setState('listening');
+  }
+}
+
+// ── Transcribe audio blob → text ──────────────────────────────────────────────
+async function transcribe(blob) {
+  setState('processing');
+  statusText.textContent = 'Transcribing...';
+
+  const formData = new FormData();
+  formData.append('audio', blob, 'recording.webm');
+
+  try {
+    const res = await fetch(`${BACKEND}/transcribe`, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json();
+    return data.text?.trim() || '';
+  } catch (err) {
+    console.error('[STT Error]', err);
+    return '';
+  }
+}
+
+// ── Initialize VAD ────────────────────────────────────────────────────────────
+async function initVAD() {
+  statusText.textContent = 'Loading VAD...';
+
+  vadInstance = await vad.MicVAD.new({
+    // Silero VAD thresholds
+    positiveSpeechThreshold: 0.80,
+    negativeSpeechThreshold: 0.35,
+    redemptionFrames: 10,       // ~310ms silence before end-of-speech
+    preSpeechPadFrames: 5,
+    minSpeechFrames: 3,
+
+    onSpeechStart: () => {
+      console.log('[VAD] Speech started');
+      vadBar.style.background = 'var(--green)';
+
+      if (currentState === 'speaking') {
+        // BARGE-IN!
+        bargeIn();
+        setState('listening');
+      } else if (currentState === 'listening') {
+        // Normal speech start
+        setState('listening');
+      }
+    },
+
+    onVADMisfire: () => {
+      console.log('[VAD] Misfire (too short)');
+      vadBar.style.width = '0%';
+    },
+
+    onSpeechEnd: async (audioData) => {
+      console.log('[VAD] Speech ended, samples:', audioData.length);
+      vadBar.style.width = '0%';
+      vadBar.style.background = 'var(--green)';
+
+      if (currentState !== 'listening' && currentState !== 'speaking') return;
+      if (audioData.length < 4000) {
+        console.log('[VAD] Too short, ignoring');
+        setState('listening');
+        return;
+      }
+
+      // Convert Float32Array → WAV → Blob for Whisper
+      const wavBlob = float32ToWavBlob(audioData, 16000);
+      const text = await transcribe(wavBlob);
+
+      if (!text || text.length < 2) {
+        console.log('[STT] Empty transcript, ignoring');
+        setState('listening');
+        return;
+      }
+
+      await chat(text);
+    },
+
+    // Live probability updates for the VAD bar
+    onFrameProcessed: (probs) => {
+      const pct = Math.round(probs.isSpeech * 100);
+      vadBar.style.width = `${pct}%`;
+      if (pct > 70) vadBar.style.background = 'var(--green)';
+      else if (pct > 40) vadBar.style.background = 'var(--yellow)';
+      else vadBar.style.background = 'var(--muted)';
+    },
+  });
+
+  return vadInstance;
+}
+
+// ── Float32 PCM → WAV Blob (for Whisper) ─────────────────────────────────────
+function float32ToWavBlob(samples, sampleRate) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view   = new DataView(buffer);
+
+  // RIFF header
+  const writeStr = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);   // PCM
+  view.setUint16(22, 1, true);   // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+
+  // PCM samples (float32 → int16)
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++, offset += 2) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+// ── Waveform visualizer ───────────────────────────────────────────────────────
+function startWaveform(stream) {
+  const ac = getAudioCtx();
+  const source = ac.createMediaStreamSource(stream);
+  analyser = ac.createAnalyser();
+  analyser.fftSize = 256;
+  source.connect(analyser);
+  dataArray = new Uint8Array(analyser.frequencyBinCount);
+  drawWaveform();
+}
+
+function drawWaveform() {
+  animFrameId = requestAnimationFrame(drawWaveform);
+  if (!analyser) return;
+
+  analyser.getByteTimeDomainData(dataArray);
+  const W = waveformCanvas.width = waveformCanvas.offsetWidth;
+  const H = waveformCanvas.height = waveformCanvas.offsetHeight;
+  ctx.clearRect(0, 0, W, H);
+
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = currentState === 'speaking'
+    ? 'rgba(33,150,243,0.7)'
+    : currentState === 'listening'
+      ? 'rgba(76,175,80,0.7)'
+      : 'rgba(255,107,53,0.5)';
+
+  ctx.beginPath();
+  const sliceW = W / dataArray.length;
+  let x = 0;
+  for (let i = 0; i < dataArray.length; i++) {
+    const v = dataArray[i] / 128.0;
+    const y = (v * H) / 2;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    x += sliceW;
+  }
+  ctx.lineTo(W, H / 2);
+  ctx.stroke();
+}
+
+// ── Transcript helpers ────────────────────────────────────────────────────────
+function addMessage(role, text, streaming = false) {
+  const msg = document.createElement('div');
+  msg.className = `msg ${role}`;
+
+  const label = document.createElement('div');
+  label.className = 'label';
+  label.textContent = role === 'user' ? 'You' : role === 'bot' ? 'TastyBot' : '';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text;
+  if (streaming) {
+    const dot = document.createElement('span');
+    dot.className = 'typing-dot';
+    bubble.appendChild(dot);
+  }
+
+  msg.appendChild(label);
+  msg.appendChild(bubble);
+  transcriptBox.appendChild(msg);
+  transcriptBox.scrollTop = transcriptBox.scrollHeight;
+
+  return bubble; // return bubble so we can update it
+}
+
+function updateBubble(bubble, text, streaming) {
+  bubble.textContent = text;
+  if (streaming) {
+    const dot = document.createElement('span');
+    dot.className = 'typing-dot';
+    bubble.appendChild(dot);
+  }
+  transcriptBox.scrollTop = transcriptBox.scrollHeight;
+}
+
+// ── Tip list click → simulate asking ─────────────────────────────────────────
+tipList.querySelectorAll('li').forEach(li => {
+  li.addEventListener('click', async () => {
+    if (!started || currentState === 'processing') return;
+    if (currentState === 'speaking') await bargeIn();
+    await chat(li.textContent.replace(/"/g, ''));
+  });
+});
+
+// ── Start button ──────────────────────────────────────────────────────────────
+startBtn.addEventListener('click', async () => {
+  if (started) return;
+  startBtn.disabled = true;
+  startBtn.textContent = '⏳ Starting...';
+
+  try {
+    // Get mic permission first (needed for VAD)
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    startWaveform(micStream);
+
+    // Init VAD (will request mic again internally — that's OK)
+    await initVAD();
+    vadInstance.start();
+
+    started = true;
+    setState('listening');
+    startBtn.textContent = '✅ Listening';
+
+    // Greet
+    await chat("Hello! I just started up.");
+
+  } catch (err) {
+    console.error('[Start Error]', err);
+    setState('error');
+    statusText.textContent = err.message;
+    startBtn.disabled = false;
+    startBtn.textContent = '🎙️ Start Conversation';
+  }
+});
+</script>
+</body>
+</html>
