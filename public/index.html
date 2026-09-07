@@ -3,32 +3,42 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>TastyBot — AI Voice Waiter</title>
+<title>TastyBot — 100% Free AI Voice Waiter · The Pixel Café</title>
+<meta name="description" content="TastyBot: 100% free AI-powered voice waiter for The Pixel Café. Order food and drinks hands-free with true barge-in interruption support." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
 
 <!-- Silero VAD from CDN -->
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.19/dist/bundle.min.js"></script>
 
 <style>
-  /* ── Reset & base ───────────────────────────────────────────────── */
+  /* ── Reset & base ──────────────────────────────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg: #0d0d0d;
-    --surface: #161616;
-    --card: #1e1e1e;
-    --border: #2a2a2a;
-    --accent: #ff6b35;
-    --accent2: #f7c59f;
-    --text: #e8e8e8;
-    --muted: #888;
-    --green: #4caf50;
-    --red: #f44336;
-    --blue: #2196f3;
-    --yellow: #ffc107;
-    --radius: 16px;
-    --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --bg:        #080b14;
+    --surface:   #0e1320;
+    --card:      rgba(16, 22, 38, 0.75);
+    --border:    rgba(255,255,255,0.07);
+    --border-hi: rgba(255,255,255,0.13);
+    --accent:    #ff6b35;
+    --accent2:   #ff9a6c;
+    --blue:      #4f9fff;
+    --blue-dim:  rgba(79,159,255,0.15);
+    --green:     #22d97a;
+    --red:       #ff4d6d;
+    --yellow:    #ffc542;
+    --text:      #e8eaf0;
+    --muted:     rgba(232,234,240,0.45);
+    --radius:    20px;
+    --font:      'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    --glow-accent: 0 0 40px rgba(255,107,53,0.35);
+    --glow-blue:   0 0 40px rgba(79,159,255,0.35);
   }
+
+  html { scroll-behavior: smooth; }
 
   body {
     background: var(--bg);
@@ -38,299 +48,522 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    overflow-x: hidden;
   }
 
-  /* ── Header ─────────────────────────────────────────────────────── */
+  /* ── Animated mesh background ────────────────────────────────────── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 70% 50% at 20% 20%, rgba(255,107,53,0.06) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 60% at 80% 80%, rgba(79,159,255,0.07) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 40% at 50% 50%, rgba(34,217,122,0.03) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+    animation: meshShift 18s ease-in-out infinite alternate;
+  }
+  @keyframes meshShift {
+    0%   { opacity: 1; }
+    50%  { opacity: 0.7; }
+    100% { opacity: 1; }
+  }
+
+  /* ── Header ──────────────────────────────────────────────────────── */
   header {
+    position: relative;
+    z-index: 10;
     width: 100%;
-    background: var(--surface);
+    background: rgba(8,11,20,0.8);
+    backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--border);
-    padding: 16px 24px;
+    padding: 14px 28px;
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 12px;
   }
-  .logo { font-size: 26px; }
-  .brand h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
-  .brand p { font-size: 12px; color: var(--muted); }
+  .header-left { display: flex; align-items: center; gap: 14px; }
+  .logo-ring {
+    width: 44px; height: 44px;
+    background: linear-gradient(135deg, var(--accent), #c94a1a);
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    box-shadow: var(--glow-accent);
+    flex-shrink: 0;
+  }
+  .brand h1 { font-size: 19px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
+  .brand p  { font-size: 11px; color: var(--muted); font-weight: 400; }
 
-  /* ── Layout ─────────────────────────────────────────────────────── */
+  .header-right { display: flex; align-items: center; gap: 10px; }
+
+  /* Mode badge */
+  .mode-badge {
+    background: rgba(34,217,122,0.12);
+    border: 1px solid rgba(34,217,122,0.25);
+    color: var(--green);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 5px 11px;
+    border-radius: 99px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mode-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+  }
+
+  /* Voice selector */
+  .voice-select-wrap {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px 12px;
+    backdrop-filter: blur(12px);
+  }
+  .voice-select-wrap label {
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 500;
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  #voiceSelect {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+    padding-right: 4px;
+    max-width: 140px;
+  }
+  #voiceSelect option { background: #0e1320; color: #fff; }
+
+  /* Record button */
+  #recordBtn {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 7px 14px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    backdrop-filter: blur(12px);
+    white-space: nowrap;
+  }
+  #recordBtn:hover { border-color: var(--border-hi); background: rgba(255,255,255,0.06); }
+  #recordBtn.recording {
+    border-color: var(--red);
+    color: var(--red);
+    background: rgba(255,77,109,0.12);
+  }
+  .rec-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--red);
+    display: none;
+  }
+  #recordBtn.recording .rec-dot { display: block; animation: blink 1s ease-in-out infinite; }
+
+  /* ── Layout ──────────────────────────────────────────────────────── */
   .main {
+    position: relative;
+    z-index: 1;
     width: 100%;
-    max-width: 900px;
-    padding: 24px 16px;
+    max-width: 980px;
+    padding: 24px 16px 40px;
     display: grid;
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: 1fr 310px;
     gap: 20px;
   }
-  @media (max-width: 700px) {
+  @media (max-width: 740px) {
     .main { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
   }
 
-  /* ── Card ───────────────────────────────────────────────────────── */
+  /* ── Glass card ──────────────────────────────────────────────────── */
   .card {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 20px;
+    padding: 22px;
+    backdrop-filter: blur(20px);
+    transition: border-color 0.3s;
   }
-  .card h2 {
-    font-size: 13px;
+  .card:hover { border-color: var(--border-hi); }
+  .card-title {
+    font-size: 10px;
     text-transform: uppercase;
-    letter-spacing: 1px;
+    letter-spacing: 1.5px;
     color: var(--muted);
-    margin-bottom: 14px;
+    margin-bottom: 16px;
+    font-weight: 600;
   }
 
-  /* ── Orb (voice status) ──────────────────────────────────────────── */
-  .orb-container {
+  /* ── Orb section ─────────────────────────────────────────────────── */
+  .orb-section {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 20px;
-    padding: 30px 0;
+    gap: 22px;
+    padding: 28px 0 20px;
   }
+
   .orb-wrap {
     position: relative;
-    width: 130px;
-    height: 130px;
+    width: 150px; height: 150px;
+    display: flex; align-items: center; justify-content: center;
   }
-  .orb {
-    width: 130px;
-    height: 130px;
-    border-radius: 50%;
-    background: radial-gradient(circle at 35% 35%, #ff8c5a, #c94a1a);
-    box-shadow: 0 0 40px rgba(255,107,53,0.3);
-    cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.3s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 48px;
-    user-select: none;
-  }
-  .orb:hover { transform: scale(1.05); }
 
-  /* Pulse rings — only show when active */
+  /* Glow halos behind the orb */
+  .orb-glow {
+    position: absolute;
+    inset: -20px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,107,53,0.18) 0%, transparent 70%);
+    pointer-events: none;
+    transition: background 0.6s;
+  }
+
+  .orb {
+    position: relative;
+    width: 150px; height: 150px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 38% 35%, #ff9060, #d94f18 60%, #8c2a06);
+    box-shadow:
+      0 0 0 1px rgba(255,107,53,0.2),
+      0 8px 40px rgba(255,107,53,0.4),
+      inset 0 1px 0 rgba(255,255,255,0.15);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 58px;
+    user-select: none;
+    transition: transform 0.25s cubic-bezier(.34,1.56,.64,1), box-shadow 0.4s;
+    will-change: transform;
+  }
+  .orb:hover { transform: scale(1.04); }
+  .orb:active { transform: scale(0.97); }
+
+  /* Pulse rings */
   .ring {
     position: absolute;
     border-radius: 50%;
-    border: 2px solid rgba(255,107,53,0.4);
+    border: 1.5px solid rgba(255,107,53,0.35);
     top: 50%; left: 50%;
-    transform: translate(-50%, -50%) scale(0);
+    transform: translate(-50%,-50%) scale(0);
     opacity: 0;
     pointer-events: none;
   }
-  .ring1 { width: 150px; height: 150px; }
-  .ring2 { width: 175px; height: 175px; }
-  .ring3 { width: 200px; height: 200px; }
+  .ring1 { width: 176px; height: 176px; }
+  .ring2 { width: 206px; height: 206px; }
+  .ring3 { width: 236px; height: 236px; }
 
-  .orb-wrap.listening .ring { animation: pulse 2s ease-out infinite; }
+  .orb-wrap.listening .ring { animation: ringPulse 2.2s ease-out infinite; }
   .orb-wrap.listening .ring1 { animation-delay: 0s; }
-  .orb-wrap.listening .ring2 { animation-delay: 0.4s; }
-  .orb-wrap.listening .ring3 { animation-delay: 0.8s; }
+  .orb-wrap.listening .ring2 { animation-delay: 0.45s; }
+  .orb-wrap.listening .ring3 { animation-delay: 0.9s; }
 
+  /* Speaking state */
   .orb-wrap.speaking .orb {
-    background: radial-gradient(circle at 35% 35%, #42a5f5, #1565c0);
-    box-shadow: 0 0 40px rgba(33,150,243,0.4);
-    animation: speakPulse 0.8s ease-in-out infinite alternate;
+    background: radial-gradient(circle at 38% 35%, #6eb8ff, #1a6fd9 60%, #083a8c);
+    box-shadow:
+      0 0 0 1px rgba(79,159,255,0.25),
+      0 8px 40px rgba(79,159,255,0.45),
+      inset 0 1px 0 rgba(255,255,255,0.15);
+    animation: speakBreathe 1s ease-in-out infinite alternate;
   }
-  .orb-wrap.speaking .ring { border-color: rgba(33,150,243,0.3); animation: pulse 1.2s ease-out infinite; }
+  .orb-wrap.speaking .orb-glow {
+    background: radial-gradient(circle, rgba(79,159,255,0.2) 0%, transparent 70%);
+  }
+  .orb-wrap.speaking .ring {
+    border-color: rgba(79,159,255,0.3);
+    animation: ringPulse 1.4s ease-out infinite;
+  }
 
+  /* Processing state */
   .orb-wrap.processing .orb {
-    background: radial-gradient(circle at 35% 35%, #ffca28, #f57f17);
-    box-shadow: 0 0 40px rgba(255,193,7,0.4);
-    animation: spin 1s linear infinite;
+    background: radial-gradient(circle at 38% 35%, #ffe082, #f9a825 60%, #e65100);
+    box-shadow:
+      0 0 0 1px rgba(255,193,7,0.25),
+      0 8px 40px rgba(255,193,7,0.4),
+      inset 0 1px 0 rgba(255,255,255,0.15);
+    animation: orbSpin 0.9s linear infinite;
   }
 
-  @keyframes pulse {
-    0%   { transform: translate(-50%,-50%) scale(0.9); opacity: 0.8; }
-    100% { transform: translate(-50%,-50%) scale(1.6); opacity: 0; }
+  @keyframes ringPulse {
+    0%   { transform: translate(-50%,-50%) scale(0.92); opacity: 0.75; }
+    100% { transform: translate(-50%,-50%) scale(1.55); opacity: 0; }
   }
-  @keyframes speakPulse {
+  @keyframes speakBreathe {
     from { transform: scale(1); }
-    to   { transform: scale(1.06); }
+    to   { transform: scale(1.07); box-shadow: 0 0 0 1px rgba(79,159,255,0.3), 0 12px 60px rgba(79,159,255,0.55), inset 0 1px 0 rgba(255,255,255,0.2); }
   }
-  @keyframes spin {
+  @keyframes orbSpin {
     from { transform: rotate(0deg); }
     to   { transform: rotate(360deg); }
   }
 
   /* ── Status pill ─────────────────────────────────────────────────── */
   .status-pill {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 99px;
-    padding: 8px 18px;
-    font-size: 14px;
-    font-weight: 500;
-  }
-  .status-dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: var(--muted);
-    transition: background 0.3s;
-  }
-  .status-dot.idle    { background: var(--muted); }
-  .status-dot.listen  { background: var(--green); animation: blink 1s ease-in-out infinite; }
-  .status-dot.think   { background: var(--yellow); animation: blink 0.5s ease-in-out infinite; }
-  .status-dot.speak   { background: var(--blue); }
-  .status-dot.error   { background: var(--red); }
-
-  @keyframes blink {
-    0%,100% { opacity: 1; }
-    50%      { opacity: 0.3; }
-  }
-
-  /* ── Waveform ───────────────────────────────────────────────────── */
-  canvas#waveform {
-    width: 100%;
-    height: 60px;
-    border-radius: 8px;
-    background: var(--surface);
-  }
-
-  /* ── Transcript ──────────────────────────────────────────────────── */
-  .transcript-box {
-    height: 380px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding-right: 4px;
-  }
-  .transcript-box::-webkit-scrollbar { width: 4px; }
-  .transcript-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-
-  .msg {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    animation: fadeUp 0.3s ease;
-  }
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  .msg .label {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--muted);
-    padding-left: 12px;
-  }
-  .msg .bubble {
-    padding: 10px 14px;
-    border-radius: 12px;
-    font-size: 14px;
-    line-height: 1.5;
-    max-width: 90%;
-  }
-  .msg.user .bubble {
-    background: rgba(255,107,53,0.15);
-    border: 1px solid rgba(255,107,53,0.25);
-    align-self: flex-end;
-  }
-  .msg.user .label { align-self: flex-end; }
-  .msg.bot .bubble {
-    background: rgba(33,150,243,0.12);
-    border: 1px solid rgba(33,150,243,0.2);
-    align-self: flex-start;
-  }
-  .msg.system .bubble {
+    display: flex; align-items: center; gap: 9px;
     background: rgba(255,255,255,0.04);
     border: 1px solid var(--border);
-    align-self: center;
-    font-size: 12px;
-    color: var(--muted);
-    text-align: center;
-  }
-  .msg.system .label { align-self: center; display: none; }
-
-  /* Streaming indicator */
-  .typing-dot {
-    display: inline-block;
-    width: 6px; height: 6px;
-    background: var(--blue);
-    border-radius: 50%;
-    margin-left: 4px;
-    animation: blink 0.8s ease-in-out infinite;
-  }
-
-  /* ── Start button ────────────────────────────────────────────────── */
-  #startBtn {
-    width: 100%;
-    padding: 14px;
-    border-radius: 12px;
-    border: none;
-    background: linear-gradient(135deg, var(--accent), #c94a1a);
-    color: white;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.2s, transform 0.1s;
-    margin-bottom: 10px;
-  }
-  #startBtn:hover { opacity: 0.9; }
-  #startBtn:active { transform: scale(0.98); }
-  #startBtn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  /* ── Sidebar ─────────────────────────────────────────────────────── */
-  .sidebar { display: flex; flex-direction: column; gap: 16px; }
-
-  .menu-preview {
-    font-size: 12px;
-    line-height: 1.8;
-    color: var(--muted);
-  }
-  .menu-preview strong { color: var(--accent2); display: block; margin-top: 8px; }
-  .menu-preview span { color: var(--text); }
-
-  .tip-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
-  .tip-list li {
-    font-size: 12px;
-    color: var(--muted);
-    padding: 8px 12px;
-    background: var(--surface);
-    border-radius: 8px;
-    border-left: 3px solid var(--accent);
-    cursor: pointer;
-    transition: background 0.2s;
-  }
-  .tip-list li:hover { background: var(--border); }
-
-  /* ── Barge-in indicator ──────────────────────────────────────────── */
-  #bargeIndicator {
-    display: none;
-    position: fixed;
-    top: 20px; right: 20px;
-    background: var(--red);
-    color: white;
-    padding: 8px 16px;
-    border-radius: 8px;
+    border-radius: 99px;
+    padding: 8px 20px;
     font-size: 13px;
-    font-weight: 600;
-    z-index: 999;
-    animation: fadeUp 0.2s ease;
+    font-weight: 500;
+    letter-spacing: 0.2px;
+  }
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.35s;
+    flex-shrink: 0;
+  }
+  .status-dot.idle   { background: rgba(255,255,255,0.25); }
+  .status-dot.listen { background: var(--green); animation: blink 1s ease-in-out infinite; }
+  .status-dot.think  { background: var(--yellow); animation: blink 0.5s ease-in-out infinite; }
+  .status-dot.speak  { background: var(--blue); }
+  .status-dot.error  { background: var(--red); }
+  @keyframes blink {
+    0%,100% { opacity: 1; }
+    50%      { opacity: 0.2; }
   }
 
   /* ── VAD confidence bar ──────────────────────────────────────────── */
-  .vad-bar-wrap { 
-    height: 4px; 
-    background: var(--border); 
-    border-radius: 2px; 
-    overflow: hidden; 
-    margin-top: 8px;
+  .vad-bar-wrap {
+    width: 210px;
+    height: 3px;
+    background: rgba(255,255,255,0.07);
+    border-radius: 3px;
+    overflow: hidden;
   }
   #vadBar {
     height: 100%;
     width: 0%;
     background: var(--green);
-    transition: width 0.1s;
+    border-radius: 3px;
+    transition: width 0.08s linear;
+  }
+
+  /* ── Waveform bars ───────────────────────────────────────────────── */
+  #waveform {
+    width: 100%;
+    height: 56px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+  }
+
+  /* ── Start button ────────────────────────────────────────────────── */
+  #startBtn {
+    width: 100%;
+    padding: 13px;
+    border-radius: 14px;
+    border: none;
+    background: linear-gradient(135deg, #ff7043, #c94a1a 80%);
+    color: white;
+    font-family: var(--font);
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.2px;
+    box-shadow: 0 4px 24px rgba(255,107,53,0.35);
+    transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+    margin-bottom: 12px;
+  }
+  #startBtn:hover:not(:disabled) {
+    opacity: 0.93;
+    box-shadow: 0 6px 32px rgba(255,107,53,0.5);
+    transform: translateY(-1px);
+  }
+  #startBtn:active:not(:disabled) { transform: scale(0.98); }
+  #startBtn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+  /* ── Transcript ──────────────────────────────────────────────────── */
+  .transcript-box {
+    height: 360px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-right: 6px;
+  }
+  .transcript-box::-webkit-scrollbar { width: 3px; }
+  .transcript-box::-webkit-scrollbar-track { background: transparent; }
+  .transcript-box::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+  .msg { display: flex; flex-direction: column; gap: 3px; animation: msgSlide 0.28s cubic-bezier(.22,1,.36,1); }
+  @keyframes msgSlide {
+    from { opacity: 0; transform: translateY(10px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .msg .label {
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--muted);
+    padding-left: 12px;
+    font-weight: 600;
+  }
+  .msg .bubble {
+    padding: 10px 15px;
+    border-radius: 14px;
+    font-size: 14px;
+    line-height: 1.6;
+    max-width: 88%;
+  }
+  .msg.user .bubble {
+    background: linear-gradient(135deg, rgba(255,107,53,0.18), rgba(255,107,53,0.08));
+    border: 1px solid rgba(255,107,53,0.22);
+    align-self: flex-end;
+    border-bottom-right-radius: 4px;
+  }
+  .msg.user .label { align-self: flex-end; }
+  .msg.bot .bubble {
+    background: linear-gradient(135deg, rgba(79,159,255,0.14), rgba(79,159,255,0.05));
+    border: 1px solid rgba(79,159,255,0.18);
+    align-self: flex-start;
+    border-bottom-left-radius: 4px;
+  }
+  .msg.system .bubble {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    align-self: center;
+    font-size: 12.5px;
+    color: var(--muted);
+    text-align: center;
+    max-width: 80%;
+    border-radius: 12px;
+  }
+  .msg.system .label { display: none; }
+
+  /* Streaming cursor */
+  .typing-dot {
+    display: inline-block;
+    width: 5px; height: 14px;
+    background: var(--blue);
     border-radius: 2px;
+    margin-left: 3px;
+    vertical-align: middle;
+    animation: cursorBlink 0.7s ease-in-out infinite;
+  }
+  @keyframes cursorBlink {
+    0%,45% { opacity: 1; }
+    55%,100% { opacity: 0; }
+  }
+
+  /* ── Barge-in toast ──────────────────────────────────────────────── */
+  #bargeIndicator {
+    display: none;
+    position: fixed;
+    top: 18px; right: 18px;
+    background: linear-gradient(135deg, #ff4d6d, #c62a47);
+    color: white;
+    padding: 9px 18px;
+    border-radius: 10px;
+    font-size: 12.5px;
+    font-weight: 700;
+    z-index: 9999;
+    animation: msgSlide 0.2s ease;
+    box-shadow: 0 4px 20px rgba(255,77,109,0.4);
+    letter-spacing: 0.3px;
+  }
+
+  /* ── Sidebar ─────────────────────────────────────────────────────── */
+  .sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+  .menu-preview {
+    font-size: 12.5px;
+    line-height: 1.9;
+    color: var(--muted);
+  }
+  .menu-section { margin-top: 10px; }
+  .menu-section:first-child { margin-top: 0; }
+  .menu-section strong {
+    color: var(--accent2);
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 2px;
+  }
+  .menu-section span { color: rgba(232,234,240,0.75); }
+
+  .tip-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .tip-list li {
+    font-size: 12.5px;
+    color: var(--muted);
+    padding: 8px 13px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.18s;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .tip-list li::before { content: '↗'; font-size: 10px; color: var(--accent); opacity: 0.6; }
+  .tip-list li:hover {
+    background: rgba(255,107,53,0.07);
+    border-color: rgba(255,107,53,0.25);
+    color: var(--text);
+    transform: translateX(2px);
+  }
+
+  .info-card {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.75;
+  }
+  .info-card .highlight { color: var(--accent); font-weight: 600; }
+  .info-card .tech-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 7px;
+    font-size: 10.5px;
+    margin: 2px 2px 0 0;
+    color: rgba(232,234,240,0.6);
+  }
+
+  /* ── Order summary card ──────────────────────────────────────────── */
+  #orderCard { display: none; }
+  #orderCard.visible { display: block; }
+  .order-items { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+  .order-item {
+    display: flex; justify-content: space-between;
+    font-size: 12.5px;
+    color: var(--text);
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .order-total {
+    display: flex; justify-content: space-between;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent2);
+    margin-top: 8px;
+    padding-top: 6px;
   }
 </style>
 </head>
@@ -340,10 +573,31 @@
 <div id="bargeIndicator">🛑 Barge-in! Stopping...</div>
 
 <header>
-  <div class="logo">🍽️</div>
-  <div class="brand">
-    <h1>TastyBot</h1>
-    <p>AI Voice Waiter · The Pixel Café</p>
+  <div class="header-left">
+    <div class="logo-ring">🍽️</div>
+    <div class="brand">
+      <h1>TastyBot</h1>
+      <p>100% Free AI Voice Waiter · The Pixel Café</p>
+    </div>
+  </div>
+
+  <div class="header-right">
+    <div class="mode-badge" id="modeBadge">
+      <span class="mode-dot"></span>
+      <span id="modeText">100% Free Mode</span>
+    </div>
+
+    <div class="voice-select-wrap">
+      <label for="voiceSelect">Voice</label>
+      <select id="voiceSelect">
+        <option value="">Default Voice</option>
+      </select>
+    </div>
+
+    <button id="recordBtn" aria-label="Record demo video">
+      <span class="rec-dot"></span>
+      <span id="recordBtnText">🎬 Record Demo</span>
+    </button>
   </div>
 </header>
 
@@ -352,31 +606,34 @@
   <div style="display:flex;flex-direction:column;gap:16px;">
 
     <div class="card">
-      <div class="orb-container">
+      <div class="orb-section">
         <div class="orb-wrap" id="orbWrap">
+          <div class="orb-glow"></div>
           <div class="ring ring1"></div>
           <div class="ring ring2"></div>
           <div class="ring ring3"></div>
           <div class="orb" id="orb">🎙️</div>
         </div>
+
         <div class="status-pill">
           <div class="status-dot idle" id="statusDot"></div>
           <span id="statusText">Click Start to begin</span>
         </div>
-        <div class="vad-bar-wrap" style="width:200px;">
+
+        <div class="vad-bar-wrap">
           <div id="vadBar"></div>
         </div>
       </div>
 
-      <button id="startBtn">🎙️ Start Conversation</button>
-      <canvas id="waveform" height="60"></canvas>
+      <button id="startBtn">🎙️ Start Conversation (100% Free)</button>
+      <canvas id="waveform" height="56"></canvas>
     </div>
 
     <div class="card" style="flex:1;">
-      <h2>Conversation</h2>
+      <div class="card-title">Conversation</div>
       <div class="transcript-box" id="transcriptBox">
         <div class="msg system">
-          <div class="bubble">👋 Hi! I'm TastyBot, your voice waiter. Hit Start and ask me anything about the menu — or just place your order!</div>
+          <div class="bubble">👋 Hi! I'm TastyBot, your AI voice waiter. Hit <strong>Start</strong> and talk to me naturally — ask about the menu or place an order!</div>
         </div>
       </div>
     </div>
@@ -385,42 +642,61 @@
   <!-- Right: Sidebar -->
   <div class="sidebar">
     <div class="card">
-      <h2>Menu Highlights</h2>
+      <div class="card-title">Menu Highlights</div>
       <div class="menu-preview">
-        <strong>☕ Drinks</strong>
-        <span>Espresso · Cappuccino · Latte · Cold Brew · Matcha</span>
-        <strong>🥐 Breakfast</strong>
-        <span>Avocado Toast · Açaí Bowl · Pancakes · Eggs</span>
-        <strong>🥪 Lunch</strong>
-        <span>Chicken Sandwich · Mushroom Panini · Caesar Salad</span>
-        <strong>🍰 Dessert</strong>
-        <span>Lava Cake · Cheesecake · Vegan Brownie</span>
+        <div class="menu-section">
+          <strong>☕ Drinks</strong>
+          <span>Espresso · Cappuccino · Latte · Cold Brew · Matcha Latte</span>
+        </div>
+        <div class="menu-section">
+          <strong>🥐 Breakfast</strong>
+          <span>Avocado Toast · Açaí Bowl · Pancakes · Scrambled Eggs</span>
+        </div>
+        <div class="menu-section">
+          <strong>🥪 Lunch</strong>
+          <span>Chicken Sandwich · Mushroom Panini · Caesar Salad · Sweet Potato Fries</span>
+        </div>
+        <div class="menu-section">
+          <strong>🍰 Desserts</strong>
+          <span>Chocolate Lava Cake · Cheesecake · Vegan Brownie</span>
+        </div>
       </div>
     </div>
 
     <div class="card">
-      <h2>Try Saying...</h2>
+      <div class="card-title">Try Saying...</div>
       <ul class="tip-list" id="tipList">
-        <li>"What's on the menu?"</li>
-        <li>"Do you have vegan options?"</li>
-        <li>"I'd like a cappuccino and avocado toast."</li>
-        <li>"What's in the Caesar salad?"</li>
-        <li>"Can I get a chocolate lava cake?"</li>
-        <li>"What's your most popular drink?"</li>
+        <li>What's on the menu?</li>
+        <li>Do you have vegan options?</li>
+        <li>I'd like a cappuccino and avocado toast.</li>
+        <li>What's in the Caesar salad?</li>
+        <li>Can I get a chocolate lava cake?</li>
+        <li>What's your most popular drink?</li>
       </ul>
     </div>
 
-    <div class="card" style="font-size:12px;color:var(--muted);line-height:1.7;">
-      <h2>How Barge-In Works</h2>
-      Start speaking while TastyBot is talking — it will <strong style="color:var(--accent)">stop immediately</strong>, cancel generation on the server, and listen to you.<br><br>
-      Powered by Silero VAD · Whisper STT · GPT-4o · OpenAI TTS
+    <div class="card info-card">
+      <div class="card-title">How Free Barge-In Works</div>
+      Start speaking while TastyBot is talking — it will <span class="highlight">stop immediately</span>, cancel generation, and listen to you.<br><br>
+      <span class="tech-badge">Web Speech API</span>
+      <span class="tech-badge">100% Free Mode</span>
+      <span class="tech-badge">Zero API Cost</span>
+      <span class="tech-badge">Instant Barge-In</span>
+    </div>
+
+    <div class="card" id="orderCard">
+      <div class="card-title">🧾 Current Order</div>
+      <div class="order-items" id="orderItems"></div>
+      <div class="order-total" id="orderTotal" style="display:none;">
+        <span>Total</span><span id="orderTotalAmt"></span>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════════════
-// TastyBot — Voice Assistant with True Barge-In
+// TastyBot — 100% Free AI Voice Waiter with True Barge-In
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const SESSION_ID = `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -437,27 +713,94 @@ const waveformCanvas = document.getElementById('waveform');
 const vadBar         = document.getElementById('vadBar');
 const bargeIndicator = document.getElementById('bargeIndicator');
 const tipList        = document.getElementById('tipList');
+const voiceSelect    = document.getElementById('voiceSelect');
+const recordBtn      = document.getElementById('recordBtn');
+const recordBtnText  = document.getElementById('recordBtnText');
+const orderCard      = document.getElementById('orderCard');
+const orderItemsEl   = document.getElementById('orderItems');
+const orderTotalEl   = document.getElementById('orderTotal');
+const orderTotalAmt  = document.getElementById('orderTotalAmt');
+const modeText       = document.getElementById('modeText');
 
-const ctx = waveformCanvas.getContext('2d');
+const wCtx = waveformCanvas.getContext('2d');
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let conversationHistory = [];
-let vadInstance         = null;
 let started             = false;
 let currentState        = 'idle'; // idle | listening | processing | speaking
+let chatAbortController = null;
+let currentOrderItems   = [];
+let currentOrderTotal   = 0;
 
-// Audio playback state
-let audioCtx            = null;
-let audioQueue          = [];       // Array of AudioBuffer
-let isPlayingAudio      = false;
-let currentSource       = null;     // Currently playing AudioBufferSourceNode
-let chatAbortController = null;     // AbortController for /chat SSE
+// Speech Recognition & Synthesis
+let recognition         = null;
+let synthVoices         = [];
+let isSpeaking          = false;
+let speechQueue         = [];
+let currentUtterance    = null;
 
-// Waveform animation
+// Waveform
 let animFrameId         = null;
 let analyser            = null;
 let dataArray           = null;
 let micStream           = null;
+let audioCtx            = null;
+let simWaveTimer        = null;
+
+// Screen recorder
+let mediaRecorder       = null;
+let recordedChunks      = [];
+let isRecording         = false;
+
+// ── Initialize Voice Options (Free Web Speech Synthesis) ─────────────────────
+function populateVoices() {
+  if (!('speechSynthesis' in window)) return;
+  synthVoices = window.speechSynthesis.getVoices();
+  if (!synthVoices || synthVoices.length === 0) return;
+
+  const currentSelection = voiceSelect.value;
+  voiceSelect.innerHTML = '';
+
+  // Filter for English voices first, then others
+  const enVoices = synthVoices.filter(v => v.lang.startsWith('en'));
+  const list = enVoices.length > 0 ? enVoices : synthVoices;
+
+  list.forEach((v, idx) => {
+    const opt = document.createElement('option');
+    opt.value = v.name;
+    opt.textContent = `${v.name.replace(/Microsoft|Google|English|United States/gi, '').trim() || v.name} (${v.lang})`;
+    // Prioritize natural or female voices for friendly café assistant
+    if (!currentSelection && (v.name.includes('Natural') || v.name.includes('Zira') || v.name.includes('Jenny') || v.name.includes('Google US English'))) {
+      opt.selected = true;
+    }
+    voiceSelect.appendChild(opt);
+  });
+
+  if (currentSelection) {
+    voiceSelect.value = currentSelection;
+  }
+}
+
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.onvoiceschanged = populateVoices;
+  populateVoices();
+}
+
+// ── Check Server Mode ────────────────────────────────────────────────────────
+async function checkServerMode() {
+  try {
+    const res = await fetch(`${BACKEND}/health`);
+    const data = await res.json();
+    if (data.mode === 'gemini') {
+      modeText.textContent = 'Gemini Flash Free Tier';
+    } else {
+      modeText.textContent = '100% Free AI Engine';
+    }
+  } catch (_) {
+    modeText.textContent = 'Free Offline Mode';
+  }
+}
+checkServerMode();
 
 // ── State machine ─────────────────────────────────────────────────────────────
 function setState(newState) {
@@ -475,13 +818,13 @@ function setState(newState) {
       orbWrap.classList.add('listening');
       orb.textContent = '👂';
       statusDot.classList.add('listen');
-      statusText.textContent = 'Listening...';
+      statusText.textContent = 'Listening... (Speak anytime)';
       break;
     case 'processing':
       orbWrap.classList.add('processing');
       orb.textContent = '⏳';
       statusDot.classList.add('think');
-      statusText.textContent = 'Thinking...';
+      statusText.textContent = 'TastyBot is thinking...';
       break;
     case 'speaking':
       orbWrap.classList.add('speaking');
@@ -492,12 +835,12 @@ function setState(newState) {
     case 'error':
       orb.textContent = '⚠️';
       statusDot.classList.add('error');
-      statusText.textContent = 'Error — check console';
+      statusText.textContent = 'Tap prompt or microphone';
       break;
   }
 }
 
-// ── Audio context ─────────────────────────────────────────────────────────────
+// ── Audio Context ─────────────────────────────────────────────────────────────
 function getAudioCtx() {
   if (!audioCtx || audioCtx.state === 'closed') {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -506,125 +849,152 @@ function getAudioCtx() {
   return audioCtx;
 }
 
-// ── Stop all audio immediately (barge-in) ─────────────────────────────────────
-function stopAudioNow() {
-  // Stop currently playing source
-  if (currentSource) {
-    try { currentSource.stop(); } catch (_) {}
-    currentSource = null;
+// ── Free TTS: Speaks text via Web Speech API ─────────────────────────────────
+function speakText(fullText) {
+  if (!('speechSynthesis' in window)) return;
+
+  // Clean any markdown formatting for cleaner speech
+  const cleanText = fullText
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/\[(.*?)\]/g, '$1')
+    .replace(/[#_~`]/g, '')
+    .trim();
+
+  if (!cleanText) return;
+
+  // Cancel prior speech
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(cleanText);
+  utterance.rate = 1.05;
+  utterance.pitch = 1.02;
+
+  // Selected voice
+  const selectedVoiceName = voiceSelect.value;
+  if (selectedVoiceName && synthVoices.length > 0) {
+    const matchedVoice = synthVoices.find(v => v.name === selectedVoiceName);
+    if (matchedVoice) utterance.voice = matchedVoice;
   }
-  // Drain queue
-  audioQueue = [];
-  isPlayingAudio = false;
-}
 
-// ── Play audio queue sequentially ─────────────────────────────────────────────
-async function playNextInQueue() {
-  if (isPlayingAudio || audioQueue.length === 0) return;
+  utterance.onstart = () => {
+    isSpeaking = true;
+    currentUtterance = utterance;
+    setState('speaking');
+    startSimulatedWaveform();
+  };
 
-  isPlayingAudio = true;
-  const ac = getAudioCtx();
-  const buffer = audioQueue.shift();
-
-  const source = ac.createBufferSource();
-  source.buffer = buffer;
-  source.connect(ac.destination);
-  currentSource = source;
-
-  source.onended = () => {
-    currentSource = null;
-    isPlayingAudio = false;
-    if (audioQueue.length > 0) {
-      playNextInQueue();
-    } else {
-      // All audio done — go back to listening
-      if (currentState === 'speaking') {
-        setState('listening');
-      }
+  utterance.onend = () => {
+    isSpeaking = false;
+    currentUtterance = null;
+    stopSimulatedWaveform();
+    if (started && currentState !== 'processing') {
+      setState('listening');
     }
   };
 
-  source.start();
+  utterance.onerror = (e) => {
+    console.warn('[SpeechSynthesis]', e.error);
+    isSpeaking = false;
+    currentUtterance = null;
+    stopSimulatedWaveform();
+    if (started) setState('listening');
+  };
+
+  window.speechSynthesis.speak(utterance);
 }
 
-// ── Decode base64 MP3 chunk and queue for playback ────────────────────────────
-let mp3Buffer = new Uint8Array(0); // accumulate until we have enough to decode
-
-async function handleAudioChunk(base64Chunk) {
-  const binary = atob(base64Chunk);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
-  // Merge into buffer
-  const merged = new Uint8Array(mp3Buffer.length + bytes.length);
-  merged.set(mp3Buffer);
-  merged.set(bytes, mp3Buffer.length);
-  mp3Buffer = merged;
-
-  // Try to decode when we have enough data (>= 16KB or done signal)
-  if (mp3Buffer.length >= 16384) {
-    await flushMp3Buffer();
-  }
-}
-
-async function flushMp3Buffer(force = false) {
-  if (mp3Buffer.length === 0) return;
-  const ac = getAudioCtx();
-  try {
-    const decoded = await ac.decodeAudioData(mp3Buffer.buffer.slice(0));
-    audioQueue.push(decoded);
-    mp3Buffer = new Uint8Array(0);
-    playNextInQueue();
-  } catch (e) {
-    if (force) {
-      console.warn('[Audio] Could not decode final buffer:', e.message);
-      mp3Buffer = new Uint8Array(0);
+// ── Simulated waveform during bot speech ──────────────────────────────────────
+function startSimulatedWaveform() {
+  if (simWaveTimer) clearInterval(simWaveTimer);
+  simWaveTimer = setInterval(() => {
+    if (!dataArray) return;
+    for (let i = 0; i < dataArray.length; i++) {
+      dataArray[i] = Math.floor(Math.random() * 160 + 40);
     }
-    // If not force, keep accumulating
+  }, 80);
+}
+
+function stopSimulatedWaveform() {
+  if (simWaveTimer) {
+    clearInterval(simWaveTimer);
+    simWaveTimer = null;
   }
 }
 
-// ── Barge-in: stop audio + cancel server generation ───────────────────────────
-async function bargeIn() {
-  console.log('[BARGE-IN] Triggered');
+// ── Instant Barge-in ──────────────────────────────────────────────────────────
+function bargeIn() {
+  console.log('[BARGE-IN] Instant Interruption Triggered!');
 
-  // Flash indicator
+  // 1. Instantly stop browser speech synthesis
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
+  isSpeaking = false;
+  currentUtterance = null;
+  stopSimulatedWaveform();
+
+  // 2. Show barge-in indicator
   bargeIndicator.style.display = 'block';
-  setTimeout(() => { bargeIndicator.style.display = 'none'; }, 1500);
+  setTimeout(() => { bargeIndicator.style.display = 'none'; }, 1200);
 
-  // 1. Stop browser audio immediately
-  stopAudioNow();
-  mp3Buffer = new Uint8Array(0);
-
-  // 2. Abort SSE connection to server
+  // 3. Abort client-side streaming fetch
   if (chatAbortController) {
     chatAbortController.abort();
     chatAbortController = null;
   }
 
-  // 3. Tell server to cancel active LLM+TTS generation (fire-and-forget)
+  // 4. Notify backend to cancel generation
   fetch(`${BACKEND}/cancel`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId: SESSION_ID }),
   }).catch(() => {});
+
+  setState('listening');
 }
 
-// ── Send text to LLM and stream back ─────────────────────────────────────────
+// ── Live Order Tracker ────────────────────────────────────────────────────────
+function updateOrderCard(items, total) {
+  if (!items || items.length === 0) return;
+
+  orderCard.classList.add('visible');
+  items.forEach(item => {
+    currentOrderItems.push(item);
+    const row = document.createElement('div');
+    row.className = 'order-item';
+    row.innerHTML = `<span>🍽️ ${item.name}</span><span>$${item.price.toFixed(2)}</span>`;
+    orderItemsEl.appendChild(row);
+  });
+
+  if (total) {
+    currentOrderTotal = total;
+  } else {
+    currentOrderTotal = currentOrderItems.reduce((sum, it) => sum + it.price, 0);
+  }
+
+  orderTotalAmt.textContent = `$${currentOrderTotal.toFixed(2)}`;
+  orderTotalEl.style.display = 'flex';
+}
+
+// ── Chat Function ─────────────────────────────────────────────────────────────
 async function chat(userText) {
+  if (!userText || !userText.trim()) return;
+
   setState('processing');
 
-  // Add user message to history and UI
+  // If user was already talking / bot was speaking, barge in
+  if (isSpeaking) {
+    bargeIn();
+  }
+
   conversationHistory.push({ role: 'user', content: userText });
   addMessage('user', userText);
 
-  // Prepare bot message bubble (will be filled as tokens stream in)
-  const botBubble = addMessage('bot', '', true); // streaming=true
+  const botBubble = addMessage('bot', '', true);
   let fullResponse = '';
 
-  // Create abort controller for this SSE request
   chatAbortController = new AbortController();
-  mp3Buffer = new Uint8Array(0);
 
   try {
     const response = await fetch(`${BACKEND}/chat`, {
@@ -642,9 +1012,6 @@ async function chat(userText) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    let firstAudioReceived = false;
-
-    setState('speaking');
 
     while (true) {
       const { done, value } = await reader.read();
@@ -652,7 +1019,7 @@ async function chat(userText) {
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
-      buffer = lines.pop(); // keep incomplete line
+      buffer = lines.pop();
 
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
@@ -664,187 +1031,128 @@ async function chat(userText) {
 
         if (evt.type === 'text') {
           fullResponse += evt.delta;
-          // Update bubble with streaming text (strip typing indicator temporarily)
           updateBubble(botBubble, fullResponse, true);
-
-        } else if (evt.type === 'audio') {
-          if (!firstAudioReceived) {
-            firstAudioReceived = true;
-            setState('speaking');
-          }
-          await handleAudioChunk(evt.chunk);
-
+        } else if (evt.type === 'order') {
+          updateOrderCard(evt.items, evt.total);
         } else if (evt.type === 'done') {
-          // Flush any remaining MP3 data
-          await flushMp3Buffer(true);
-          updateBubble(botBubble, fullResponse, false); // remove typing dot
+          updateBubble(botBubble, fullResponse, false);
           break;
-
         } else if (evt.type === 'error') {
-          console.error('[SSE Error]', evt.message);
-          break;
+          console.warn('[Server Chat Warning]', evt.message);
         }
       }
     }
 
-    // Save to history
     if (fullResponse) {
+      updateBubble(botBubble, fullResponse, false);
       conversationHistory.push({ role: 'assistant', content: fullResponse });
+      // Speak the response using 100% Free Web Speech API!
+      speakText(fullResponse);
+    } else {
+      updateBubble(botBubble, "I'm ready for your order! What would you like from the menu?", false);
+      speakText("I'm ready for your order! What would you like from the menu?");
     }
 
   } catch (err) {
     if (err.name === 'AbortError') {
-      console.log('[Chat] Aborted (barge-in)');
-      // Partial response is fine — mark bubble as interrupted
+      console.log('[Chat] Aborted by barge-in');
       if (fullResponse) {
         updateBubble(botBubble, fullResponse + ' ✂️', false);
         conversationHistory.push({ role: 'assistant', content: fullResponse });
       } else {
-        botBubble.remove(); // nothing was said
+        botBubble.closest('.msg')?.remove();
       }
     } else {
       console.error('[Chat Error]', err);
-      setState('error');
-      return;
+      updateBubble(botBubble, "I'm here! Would you like to check out the drinks or food menu?", false);
+      speakText("I'm here! Would you like to check out the drinks or food menu?");
     }
   }
 
   chatAbortController = null;
-
-  // If audio is still playing, state will switch to listening via onended
-  // If no audio (e.g., barge-in happened), go back to listening
-  if (!isPlayingAudio && audioQueue.length === 0) {
-    setState('listening');
-  }
 }
 
-// ── Transcribe audio blob → text ──────────────────────────────────────────────
-async function transcribe(blob) {
-  setState('processing');
-  statusText.textContent = 'Transcribing...';
+// ── Free STT: Web Speech Recognition (Built-in to Chrome & Edge) ─────────────
+function initSpeechRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-  const formData = new FormData();
-  formData.append('audio', blob, 'recording.webm');
-
-  try {
-    const res = await fetch(`${BACKEND}/transcribe`, {
-      method: 'POST',
-      body: formData,
-    });
-    const data = await res.json();
-    return data.text?.trim() || '';
-  } catch (err) {
-    console.error('[STT Error]', err);
-    return '';
+  if (!SpeechRecognition) {
+    console.warn('[STT] Web Speech API not supported in this browser. Falling back to click mode.');
+    return null;
   }
-}
 
-// ── Initialize VAD ────────────────────────────────────────────────────────────
-async function initVAD() {
-  statusText.textContent = 'Loading VAD...';
+  const rec = new SpeechRecognition();
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.lang = 'en-US';
 
-  vadInstance = await vad.MicVAD.new({
-    // Silero VAD thresholds
-    positiveSpeechThreshold: 0.80,
-    negativeSpeechThreshold: 0.35,
-    redemptionFrames: 10,       // ~310ms silence before end-of-speech
-    preSpeechPadFrames: 5,
-    minSpeechFrames: 3,
+  rec.onstart = () => {
+    console.log('[STT] Speech recognition started');
+    vadBar.style.width = '100%';
+    vadBar.style.background = 'var(--green)';
+  };
 
-    onSpeechStart: () => {
-      console.log('[VAD] Speech started');
+  rec.onspeechstart = () => {
+    console.log('[STT] Speech detected!');
+    // If TastyBot is currently speaking, IMMEDIATELY BARGE IN!
+    if (isSpeaking || currentState === 'speaking') {
+      bargeIn();
+    }
+  };
+
+  rec.onresult = (event) => {
+    let interimText = '';
+    let finalText = '';
+
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+      const trans = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalText += trans;
+      } else {
+        interimText += trans;
+        // User is speaking interim words while bot is talking -> immediate barge-in!
+        if (isSpeaking || currentState === 'speaking') {
+          bargeIn();
+        }
+      }
+    }
+
+    if (interimText) {
+      vadBar.style.width = '75%';
       vadBar.style.background = 'var(--green)';
+    }
 
-      if (currentState === 'speaking') {
-        // BARGE-IN!
-        bargeIn();
-        setState('listening');
-      } else if (currentState === 'listening') {
-        // Normal speech start
-        setState('listening');
-      }
-    },
-
-    onVADMisfire: () => {
-      console.log('[VAD] Misfire (too short)');
+    if (finalText && finalText.trim().length > 1) {
+      console.log('[STT Captured Text]:', finalText);
       vadBar.style.width = '0%';
-    },
+      chat(finalText.trim());
+    }
+  };
 
-    onSpeechEnd: async (audioData) => {
-      console.log('[VAD] Speech ended, samples:', audioData.length);
-      vadBar.style.width = '0%';
-      vadBar.style.background = 'var(--green)';
+  rec.onerror = (event) => {
+    console.warn('[STT Recognition Error]', event.error);
+    if (event.error === 'not-allowed') {
+      setState('error');
+      statusText.textContent = 'Mic access blocked. Click tips to talk!';
+    }
+  };
 
-      if (currentState !== 'listening' && currentState !== 'speaking') return;
-      if (audioData.length < 4000) {
-        console.log('[VAD] Too short, ignoring');
-        setState('listening');
-        return;
-      }
+  rec.onend = () => {
+    // Keep listening continuously if session is active
+    if (started && currentState !== 'error') {
+      try { rec.start(); } catch (_) {}
+    }
+  };
 
-      // Convert Float32Array → WAV → Blob for Whisper
-      const wavBlob = float32ToWavBlob(audioData, 16000);
-      const text = await transcribe(wavBlob);
-
-      if (!text || text.length < 2) {
-        console.log('[STT] Empty transcript, ignoring');
-        setState('listening');
-        return;
-      }
-
-      await chat(text);
-    },
-
-    // Live probability updates for the VAD bar
-    onFrameProcessed: (probs) => {
-      const pct = Math.round(probs.isSpeech * 100);
-      vadBar.style.width = `${pct}%`;
-      if (pct > 70) vadBar.style.background = 'var(--green)';
-      else if (pct > 40) vadBar.style.background = 'var(--yellow)';
-      else vadBar.style.background = 'var(--muted)';
-    },
-  });
-
-  return vadInstance;
+  return rec;
 }
 
-// ── Float32 PCM → WAV Blob (for Whisper) ─────────────────────────────────────
-function float32ToWavBlob(samples, sampleRate) {
-  const buffer = new ArrayBuffer(44 + samples.length * 2);
-  const view   = new DataView(buffer);
-
-  // RIFF header
-  const writeStr = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
-  writeStr(0, 'RIFF');
-  view.setUint32(4, 36 + samples.length * 2, true);
-  writeStr(8, 'WAVE');
-  writeStr(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);   // PCM
-  view.setUint16(22, 1, true);   // mono
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeStr(36, 'data');
-  view.setUint32(40, samples.length * 2, true);
-
-  // PCM samples (float32 → int16)
-  let offset = 44;
-  for (let i = 0; i < samples.length; i++, offset += 2) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-  }
-
-  return new Blob([buffer], { type: 'audio/wav' });
-}
-
-// ── Waveform visualizer ───────────────────────────────────────────────────────
+// ── Waveform visualizer (bar style) ──────────────────────────────────────────
 function startWaveform(stream) {
   const ac = getAudioCtx();
   const source = ac.createMediaStreamSource(stream);
   analyser = ac.createAnalyser();
-  analyser.fftSize = 256;
+  analyser.fftSize = 64;
   source.connect(analyser);
   dataArray = new Uint8Array(analyser.frequencyBinCount);
   drawWaveform();
@@ -852,31 +1160,35 @@ function startWaveform(stream) {
 
 function drawWaveform() {
   animFrameId = requestAnimationFrame(drawWaveform);
-  if (!analyser) return;
+  if (!analyser || !dataArray) return;
 
-  analyser.getByteTimeDomainData(dataArray);
-  const W = waveformCanvas.width = waveformCanvas.offsetWidth;
-  const H = waveformCanvas.height = waveformCanvas.offsetHeight;
-  ctx.clearRect(0, 0, W, H);
-
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = currentState === 'speaking'
-    ? 'rgba(33,150,243,0.7)'
-    : currentState === 'listening'
-      ? 'rgba(76,175,80,0.7)'
-      : 'rgba(255,107,53,0.5)';
-
-  ctx.beginPath();
-  const sliceW = W / dataArray.length;
-  let x = 0;
-  for (let i = 0; i < dataArray.length; i++) {
-    const v = dataArray[i] / 128.0;
-    const y = (v * H) / 2;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    x += sliceW;
+  if (!simWaveTimer) {
+    analyser.getByteFrequencyData(dataArray);
   }
-  ctx.lineTo(W, H / 2);
-  ctx.stroke();
+
+  const W = waveformCanvas.width  = waveformCanvas.offsetWidth;
+  const H = waveformCanvas.height = waveformCanvas.offsetHeight;
+  wCtx.clearRect(0, 0, W, H);
+
+  const barCount = dataArray.length;
+  const barW     = (W / barCount) * 0.65;
+  const gap      = (W / barCount) * 0.35;
+
+  let color;
+  if (currentState === 'speaking')       color = 'rgba(79,159,255,0.85)';
+  else if (currentState === 'listening') color = 'rgba(34,217,122,0.8)';
+  else                                   color = 'rgba(255,107,53,0.5)';
+
+  for (let i = 0; i < barCount; i++) {
+    const barH = Math.max(3, (dataArray[i] / 255) * H * 0.85);
+    const x    = i * (barW + gap) + gap / 2;
+    const y    = (H - barH) / 2;
+
+    wCtx.fillStyle = color;
+    wCtx.beginPath();
+    wCtx.roundRect(x, y, barW, barH, 2);
+    wCtx.fill();
+  }
 }
 
 // ── Transcript helpers ────────────────────────────────────────────────────────
@@ -902,7 +1214,7 @@ function addMessage(role, text, streaming = false) {
   transcriptBox.appendChild(msg);
   transcriptBox.scrollTop = transcriptBox.scrollHeight;
 
-  return bubble; // return bubble so we can update it
+  return bubble;
 }
 
 function updateBubble(bubble, text, streaming) {
@@ -915,12 +1227,11 @@ function updateBubble(bubble, text, streaming) {
   transcriptBox.scrollTop = transcriptBox.scrollHeight;
 }
 
-// ── Tip list click → simulate asking ─────────────────────────────────────────
+// ── Tip list: click to send ───────────────────────────────────────────────────
 tipList.querySelectorAll('li').forEach(li => {
   li.addEventListener('click', async () => {
-    if (!started || currentState === 'processing') return;
-    if (currentState === 'speaking') await bargeIn();
-    await chat(li.textContent.replace(/"/g, ''));
+    if (isSpeaking) bargeIn();
+    await chat(li.textContent.trim());
   });
 });
 
@@ -931,27 +1242,104 @@ startBtn.addEventListener('click', async () => {
   startBtn.textContent = '⏳ Starting...';
 
   try {
-    // Get mic permission first (needed for VAD)
     micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     startWaveform(micStream);
 
-    // Init VAD (will request mic again internally — that's OK)
-    await initVAD();
-    vadInstance.start();
+    // Initialize free Speech Recognition
+    recognition = initSpeechRecognition();
+    if (recognition) {
+      try { recognition.start(); } catch (_) {}
+    }
 
     started = true;
     setState('listening');
-    startBtn.textContent = '✅ Listening';
+    startBtn.textContent = '✅ Listening (100% Free)';
 
-    // Greet
-    await chat("Hello! I just started up.");
+    // Initial greeting
+    await chat('Hello! I just started up.');
 
   } catch (err) {
     console.error('[Start Error]', err);
     setState('error');
-    statusText.textContent = err.message;
+    statusText.textContent = 'Microphone permission needed';
     startBtn.disabled = false;
-    startBtn.textContent = '🎙️ Start Conversation';
+    startBtn.textContent = '🎙️ Retry Start';
+  }
+});
+
+// ── Screen recorder ───────────────────────────────────────────────────────────
+recordBtn.addEventListener('click', async () => {
+  if (isRecording) {
+    // Stop recording
+    mediaRecorder.stop();
+    isRecording = false;
+    recordBtn.classList.remove('recording');
+    recordBtnText.textContent = '🎬 Record Demo';
+  } else {
+    // Start recording
+    try {
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 30, displaySurface: 'browser' },
+        audio: true,
+      });
+
+      // Merge tab audio with mic audio if available
+      let combinedStream = displayStream;
+      if (micStream) {
+        const allTracks = [
+          ...displayStream.getVideoTracks(),
+          ...displayStream.getAudioTracks(),
+          ...micStream.getAudioTracks(),
+        ];
+        combinedStream = new MediaStream(allTracks);
+      }
+
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(combinedStream, {
+        mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+          ? 'video/webm;codecs=vp9,opus'
+          : 'video/webm',
+      });
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = `tastybot-demo-${Date.now()}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        // Stop all display tracks
+        displayStream.getTracks().forEach(t => t.stop());
+        addMessage('system', '🎬 Demo video saved!');
+      };
+
+      displayStream.getVideoTracks()[0].addEventListener('ended', () => {
+        if (isRecording) {
+          mediaRecorder.stop();
+          isRecording = false;
+          recordBtn.classList.remove('recording');
+          recordBtnText.textContent = '🎬 Record Demo';
+        }
+      });
+
+      mediaRecorder.start(250);
+      isRecording = true;
+      recordBtn.classList.add('recording');
+      recordBtnText.textContent = '⏹ Stop Recording';
+      addMessage('system', '🔴 Recording started — talk to TastyBot or click tips!');
+
+    } catch (err) {
+      if (err.name !== 'NotAllowedError') {
+        console.error('[Recorder Error]', err);
+        addMessage('system', `⚠️ Recording failed: ${err.message}`);
+      }
+    }
   }
 });
 </script>
