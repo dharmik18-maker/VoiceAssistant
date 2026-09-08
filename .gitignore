@@ -1,5 +1,6 @@
 node_modules/
 .env
 *.webm
+*.webp
 tmp_*.wav
 tmp_*.webm
