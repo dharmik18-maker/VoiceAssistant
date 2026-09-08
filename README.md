@@ -5,6 +5,7 @@ A fast, browser-based voice assistant for **"The Pixel Café"** that supports **
 **100% FREE** — No paid OpenAI subscription, no Whisper costs, no credit card required!
 
 ---
+Live wesite Link-(https://voice-assistant-teal-theta.vercel.app/)
 
 ## 🚀 Features
 
