@@ -1129,18 +1129,40 @@ function initSpeechRecognition() {
     }
   };
 
+  // Non-fatal errors: restart listening. Fatal errors: surface to user.
   rec.onerror = (event) => {
     console.warn('[STT Recognition Error]', event.error);
-    if (event.error === 'not-allowed') {
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      // User blocked microphone — stop entirely
       setState('error');
       statusText.textContent = 'Mic access blocked. Click tips to talk!';
     }
+    // 'no-speech', 'audio-capture', 'network' are recoverable;
+    // onend will fire after this and restart the listener automatically.
   };
 
   rec.onend = () => {
-    // Keep listening continuously if session is active
+    console.log('[STT] Recognition ended');
+    // Guard: only restart if this is still the active recognition instance.
+    // If barge-in or a new session replaced `recognition`, this stale closure
+    // must NOT restart and ghost-listen in the background.
+    if (rec !== recognition) {
+      console.log('[STT] Stale instance — not restarting.');
+      return;
+    }
+    // Restart continuously while the session is active and not in error state.
     if (started && currentState !== 'error') {
-      try { rec.start(); } catch (_) {}
+      // Small delay prevents Chrome's InvalidStateError when onend fires
+      // before the internal recognizer has fully torn down.
+      setTimeout(() => {
+        if (rec !== recognition) return; // re-check after delay
+        try {
+          rec.start();
+          console.log('[STT] Restarted listening');
+        } catch (e) {
+          console.warn('[STT] Could not restart recognition:', e.message);
+        }
+      }, 300);
     }
   };
 
